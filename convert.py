@@ -1,57 +1,49 @@
 import cv2
+import os
+import argparse
 from utils.helper import GetLogger, Predictor
-from argparse import ArgumentParser
-import sys
-
-
-parser = ArgumentParser()
-parser.add_argument(
-    "--input", type=str, help="Set the input path to the video", required=True
-)
-parser.add_argument(
-    "--out", type=str, help="Set the output path to the video", required=True
-)
-args = parser.parse_args()
-
 
 logger = GetLogger.logger(__name__)
 predictor = Predictor()
 
-# Open video file
-video_path = args.input
-cap = cv2.VideoCapture(video_path)
+def segment_image(input_path, output_dir):
+    # Load the image
+    image = cv2.imread(input_path)
 
-# Get video information
-fps = cap.get(cv2.CAP_PROP_FPS)
-n_frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
-logger.info(f"No of frames {n_frames}")
-width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    if image is None:
+        logger.error(f"Could not read the image: {input_path}")
+        return
 
-# Create VideoWriter for output
-output_path = args.out
-fourcc = cv2.VideoWriter_fourcc(*"XVID")
-out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+    # Process the image using the Predictor class (assuming it exists)
+    out_frame, out_frame_seg = predictor.predict(image)
 
-# Process each frame
-done = 0
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        break
+    # Construct the output file path
+    input_filename, input_extension = os.path.splitext(os.path.basename(input_path))
+    output_path = os.path.join(output_dir, f"{input_filename}_segmented{input_extension}")
 
-    out_frame, out_frame_seg = predictor.predict(frame)
+    # Save the segmented image
+    cv2.imwrite(output_path, out_frame_seg)
+    print(f"Segmented image saved at {output_path}")
 
-    # Write the frame to the output video
-    out.write(out_frame_seg)
 
-    done += 1
-    percent = int((done / n_frames) * 100)
-    sys.stdout.write(
-        "\rProgress: [{}{}] {}%".format("=" * percent, " " * (100 - percent), percent)
-    )
-    sys.stdout.flush()
+def main(input_dir, output_dir):
+    # Convert output directory to absolute path relative to the current working directory
+    output_dir = os.path.abspath(output_dir)
 
-# Release video capture and writer
-cap.release()
-out.release()
+    # Create the output directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Process all images in the input directory
+    for filename in os.listdir(input_dir):
+        if filename.endswith(('.jpg', '.jpeg', '.png', '.bmp')):
+            input_path = os.path.join(input_dir, filename)
+            segment_image(input_path, output_dir)
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Segment images in a directory')
+    parser.add_argument('input_dir', type=str, help='Directory containing input images')
+    parser.add_argument('output_dir', type=str, help='Directory to save segmented images')
+    args = parser.parse_args()
+    main(args.input_dir, args.output_dir)
+
